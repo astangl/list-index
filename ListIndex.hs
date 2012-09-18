@@ -17,29 +17,26 @@ but feel free to experiment. Memory usage should be roughly proportional to
 accessed list size / (fanout - 1)
 -}
 
-module ListIndex (fromList, (!), LI) where
+module ListIndex ((!), fromList, LI) where
 
 -- | Type of index wrapping an underlying list
 data LI a = LI Int [LInode a]
-data LInode a = LiNonLeaf (LInode a) (LInode a) | LiLeaf (LInode a) [a]
+data LInode a = FullNode (LInode a) (LInode a) | LeafNode [a] (LInode a)
 
 -- | Constructs index from specified list and fanout
 fromList :: [a] -> Int -> LI a
 fromList l fo =
-  let topLevel = mkTopLevelNode l
-      mkTopLevelNode l = LiLeaf (mkTopLevelNode (drop fo l)) l
-      mkLevel plv = let lv = mkMidLevelNode plv
-                    in lv : mkLevel lv
-      mkMidLevelNode l = LiNonLeaf (mkMidLevelNode (nodeDrop fo l)) l
-  in LI fo (topLevel : mkLevel topLevel)
+  let mkLeafNode l = LeafNode l (mkLeafNode (drop fo l))
+      mkFullNode l = FullNode l (mkFullNode (nodeDrop fo l))
+  in LI fo (iterate mkFullNode (mkLeafNode l))
 
 -- drop i nodes from a linear node stream
 nodeDrop :: Int -> LInode a -> LInode a
 nodeDrop 0 n = n
 nodeDrop i n = let i' = i - 1
                in case n of
-                    LiNonLeaf n' _ -> nodeDrop i' n'
-                    LiLeaf    n' _ -> nodeDrop i' n'
+                    FullNode _ n' -> nodeDrop i' n'
+                    LeafNode _ n' -> nodeDrop i' n'
 
 -- | access specified element of underlying list using index to speed access
 (!) :: LI a -> Int -> a
@@ -49,7 +46,7 @@ nodeDrop i n = let i' = i - 1
                                       then n
                                       else parent $ getLevel q ns
                             in nodeDrop r l
-      parent (LiNonLeaf _ p) = p
+      parent (FullNode p _) = p
       (q, r) = i `quotRem` fo
-      (LiLeaf _ l) = getLevel q ns
+      (LeafNode l _) = getLevel q ns
   in l !! r
